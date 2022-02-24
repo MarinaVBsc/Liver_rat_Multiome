@@ -1,0 +1,500 @@
+#Running Single Nuclei from Singulator
+#Sample: Liver RAT nuclei 3 different conditions (Control-CT, Cirrhotic-CH, Regression-R)
+#Objective: Compare different conditions
+
+###################################################	
+### Packages and Seurat Object
+###################################################	
+
+#BiocManager::install("hdf5r")
+library(hdf5r)
+#install.packages("installr") #install R
+#library(installr)
+#require(devtools)
+#devtools::install_github("AndreaCirilloAC/updateR")
+
+#if(!require(Seurat)){install.packages("Seurat")}
+#install.packages('httpuv')
+#install.packages('Matrix')
+#In case Seurat didnt work. Open RStudio, go to "Packages", click on "install", watch for 'sn', then download it. Also downloaded 'httpuv' package
+library(httpuv)
+library(Seurat)
+library(patchwork) # you might need to install that too
+#install.packages("htmltools")
+library(htmltools)
+#install.packages('tidyverse')
+library(tidyverse)
+library(magrittr)
+library(fs)
+#install.packages('ggplot2')
+library(ggplot2)
+library(dplyr)
+#install.packages('Signac')
+library(Signac)
+#install.packages("EnsDb.Rnorvegicus.v79")
+library(EnsDb.Rnorvegicus.v79)
+library(GenomicRanges)
+library(data.table)
+
+library(BSgenome.Rnorvegicus.UCSC.rn6)
+
+#install.packages("BiocManager")
+
+#BiocManager::install("BSgenome.Rnorvegicus.UCSC.rn6")
+#BiocManager::install("EnsDb.Rnorvegicus.v79", force = TRUE)
+
+#Organize input data#
+args<- commandArgs(trailingOnly = TRUE)
+
+# Check paths
+# Automated paths:	
+#HOME=path_home()	los datos estan esta vez en work, no en home
+
+# Load RNA the dataset (from Seurat)
+CT_1 <-Read10X_h5("/work/marina.v/Multiome/Rat_liver_multiome_CT_1/outs/filtered_feature_bc_matrix.h5")
+CH_1 <-Read10X_h5("/work/marina.v/Multiome/Rat_liver_multiome_CH_1/outs/filtered_feature_bc_matrix.h5")
+R_1 <-Read10X_h5("/work/marina.v/Multiome/Rat_liver_multiome_R_1/outs/filtered_feature_bc_matrix.h5")
+
+CT_2 <-Read10X_h5('/work/marina.v/Multiome/Rat_liver_multiome_CT_2/outs/filtered_feature_bc_matrix.h5')
+CH_2 <-Read10X_h5('/work/marina.v/Multiome/Rat_liver_multiome_CH_2/outs/filtered_feature_bc_matrix.h5')
+R_2 <-Read10X_h5('/work/marina.v/Multiome/Rat_liver_multiome_R_2/outs/filtered_feature_bc_matrix.h5')
+
+#Load ATAC data
+
+fragpath_CT <- "/work/marina.v/Multiome/Rat_liver_multiome_CT_1/outs/atac_fragments.tsv.gz"
+fragpath_CH <- "/work/marina.v/Multiome/Rat_liver_multiome_CH_1/outs/atac_fragments.tsv.gz"
+fragpath_R <- "/work/marina.v/Multiome/Rat_liver_multiome_R_1/outs/atac_fragments.tsv.gz"
+
+fragpath_CT_2 <- "/work/marina.v/Multiome/Rat_liver_multiome_CT_2/outs/atac_fragments.tsv.gz"
+fragpath_CH_2 <- "/work/marina.v/Multiome/Rat_liver_multiome_CH_2/outs/atac_fragments.tsv.gz"
+fragpath_R_2 <- "/work/marina.v/Multiome/Rat_liver_multiome_R_2/outs/atac_fragments.tsv.gz"
+
+
+#get the annotations for Rn6
+
+annotation_Rn6 <- GetGRangesFromEnsDb(ensdb = EnsDb.Rnorvegicus.v79)
+seqlevelsStyle(annotation_Rn6) <- "UCSC"
+
+#######This part is from scATAC https://satijalab.org/signac/articles/integrate_atac.html################
+
+frag_counts_CT <- CountFragments (fragments = fragpath_CT)
+frag_counts_CH <- CountFragments (fragments = fragpath_CH)
+frag_counts_R <- CountFragments (fragments = fragpath_R)
+frag_counts_CT_2 <- CountFragments(fragments = fragpath_CT_2)
+frag_counts_CH_2 <-CountFragments(fragments = fragpath_CH_2)
+frag_counts_R_2 <- CountFragments(fragments = fragpath_R_2)
+
+#count fragments per cell 
+atac.cells_CT_1 <- frag_counts_CT[frag_counts_CT$frequency_count >2000, "CB"]
+atac.cells_CH_1 <-frag_counts_CH[frag_counts_CH$frequency_count >2000, "CB"]
+atac.cells_R_1 <- frag_counts_R[frag_counts_R$frequency_count >2000, "CB"]
+
+atac.cells_CT_2 <-frag_counts_CT_2[frag_counts_CT_2$frequency_count >2000, "CB"]
+atac.cells_CH_2 <-frag_counts_CH_2[frag_counts_CH_2$frequency_counte >2000, "CB"]
+atac.cells_R_2 <-frag_counts_R_2[frag_counts_R_2$frequency_counte >2000, "CB"]
+
+#create the fragment object
+
+atac_frags_CT_1 <- CreateFragmentObject(path = fragpath_CT, cells = atac.cells_CT_1)
+atac_frags_CH_1 <- CreateFragmentObject(path = fragpath_CH, cells = atac.cells_CH_1)
+atac_frags_R_1 <- CreateFragmentObject(path = fragpath_R, cells = atac.cells_R_1)
+atac_frag_CT_2 <- CreateFragmentObject(path = fragpath_CT_2, cells = atac.cells_CT_2)
+atac_frag_CH_2 <- CreateFragmentObject(path = fragpath_CH_2, cells = atac.cells_CH_2)
+atac_frag_R_2 <- CreateFragmentObject(path = fragpath_R_2, cells = atac.cells_R_2)
+
+merged_fragpath_1 <- 
+  
+##################################################
+#Create Seurat Object for RNA data
+
+Seurat_CT_1<- CreateSeuratObject(counts = CT_1$'Gene Expression', assay = "RNA", project = "Control")
+#CT_1, project = "LiverCT" , min.cells = 3, min.features = 200)
+Seurat_CT_1$sample <- "Liver_CT_1"
+Seurat_CT_2<- CreateSeuratObject(counts = CT_2$'Gene Expression', assay = "RNA", project = "Control")
+#CT_1, project = "LiverCT" , min.cells = 3, min.features = 200)
+Seurat_CT_2$sample <- "Liver_CT_2"
+
+Seurat_CH_1<- CreateSeuratObject(counts = CH_1$'Gene Expression', assay = "RNA", project = "Cirrhotic")
+Seurat_CH_1$sample <- "Liver_CH_1"
+Seurat_CH_2<- CreateSeuratObject(counts = CH_2$'Gene Expression', assay = "RNA", project = "Cirrhotic")
+Seurat_CH_2$sample <- "Liver_CH_2"
+
+Seurat_R_1<- CreateSeuratObject(counts = R_1$'Gene Expression', assay = "RNA", project = "Regression")
+Seurat_R_1$sample <- "Liver_R_1"
+Seurat_R_2<- CreateSeuratObject(counts = R_2$'Gene Expression', assay = "RNA", project = "Regression")
+Seurat_R_2$sample <- "Liver_R_2"
+
+#create ATAC assay and add it to the object
+
+Seurat_CT_1[["ATAC"]] <- CreateChromatinAssay(counts = CT_1$Peaks, 
+                                              sep = c(":", "-"),
+                                              fragments = fragpath_CT,
+                                              annotation = annotation_Rn6)
+
+Seurat_CT_2[["ATAC"]] <- CreateChromatinAssay(counts = CT_2$Peaks, 
+                                              sep = c(":", "-"),
+                                              fragments = fragpath_CT_2,
+                                              annotation = annotation_Rn6)
+
+Seurat_CH_1[["ATAC"]] <- CreateChromatinAssay(counts = CH_1$Peaks, 
+                                              sep = c(":", "-"),
+                                              fragments = fragpath_CH,
+                                              annotation = annotation_Rn6)
+
+Seurat_CH_2[["ATAC"]] <- CreateChromatinAssay(counts = CH_2$Peaks, 
+                                              sep = c(":", "-"),
+                                              fragments = fragpath_CH_2,
+                                              annotation = annotation_Rn6)
+
+Seurat_R_1[["ATAC"]] <- CreateChromatinAssay(counts = R_1$Peaks, 
+                                             sep = c(":", "-"),
+                                             fragments = fragpath_R,
+                                             annotation = annotation_Rn6)
+
+Seurat_R_2[["ATAC"]] <- CreateChromatinAssay(counts = R_2$Peaks, 
+                                            sep = c(":", "-"),
+                                            fragments = fragpath_R_2,
+                                             annotation = annotation_Rn6)
+
+#PERCENT MITO
+Seurat_CT_1$mitoRatio <- PercentageFeatureSet(object = Seurat_CT_1, pattern = "Mt-")
+Seurat_CT_1$mitoRatio <- Seurat_CT_1@meta.data$mitoRatio/100
+Seurat_CT_2$mitoRatio <- PercentageFeatureSet(object = Seurat_CT_2, pattern = "Mt-")
+Seurat_CT_2$mitoRatio <- Seurat_CT_2@meta.data$mitoRatio/100
+
+Seurat_CH_1$mitoRatio <- PercentageFeatureSet(object = Seurat_CH_1, pattern = "Mt-")
+Seurat_CH_1$mitoRatio <- Seurat_CH_1@meta.data$mitoRatio/100
+Seurat_CH_2$mitoRatio <- PercentageFeatureSet(object = Seurat_CH_2, pattern = "Mt-")
+Seurat_CH_2$mitoRatio <- Seurat_CH_2@meta.data$mitoRatio/100
+
+Seurat_R_1$mitoRatio <- PercentageFeatureSet(object = Seurat_R_1, pattern = "Mt-")
+Seurat_R_1$mitoRatio <- Seurat_R_1@meta.data$mitoRatio/100
+Seurat_R_2$mitoRatio <- PercentageFeatureSet(object = Seurat_R_2, pattern = "Mt-")
+Seurat_R_2$mitoRatio <- Seurat_R_2@meta.data$mitoRatio/100
+
+
+##SATIJA LAB MULTIOME https://satijalab.org/signac/articles/pbmc_multiomic.html
+
+DefaultAssay(Seurat_CT_1) <-"ATAC"
+DefaultAssay(Seurat_CH_1) <-"ATAC"
+DefaultAssay(Seurat_R_1) <-"ATAC"
+DefaultAssay(Seurat_CT_2) <- "ATAC"
+DefaultAssay(Seurat_CH_2) <- "ATAC"
+DefaultAssay(Seurat_R_2) <- "ATAC"
+
+Seurat_CT_1 <-NucleosomeSignal(Seurat_CT_1)
+Seurat_CT_1 <-TSSEnrichment(Seurat_CT_1) 
+Seurat_CT_2 <-NucleosomeSignal(Seurat_CT_2)
+Seurat_CT_2 <-TSSEnrichment (Seurat_CT_2)
+
+Seurat_CH_1 <-NucleosomeSignal(Seurat_CH_1)
+Seurat_CH_1 <-TSSEnrichment(Seurat_CH_1)
+Seurat_CH_2 <- NucleosomeSignal (Seurat_CH_2)
+Seurat_CH_2 <- TSSEnrichment (Seurat_CH_2)
+
+Seurat_R_1 <- NucleosomeSignal(Seurat_R_1)
+Seurat_R_1 <-TSSEnrichment(Seurat_R_1)
+Seurat_R_2 <-NucleosomeSignal (Seurat_R_2)
+Seurat_R_2 <- TSSEnrichment (Seurat_R_2)
+
+#Filtering top4000 cells or nuclei
+#Selected_CT_1 <- Seurat_CT_1$nCount_RNA %>% sort(.,decreasing = T) %>% names %>% head(4000)
+#Seurat_CT_1<- Seurat_CT_1[,Selected_CT_1]
+
+#Selected_CT_2 <- Seurat_CT_2$nCount_RNA %>% sort(., decreasing = T) %>% names %>% head(4000)
+#Seurat_CT_2 <- Seurat_CT_2[,Selected_CT_2]
+
+#Selected_combined_CT <- combined.CT$nCount_RNA %>% sort(.,decreasing = T) %>% names %>% head(4000)
+#Filt_selected_combined_CT <- combined.CT[,Selected_combined_CT]
+#quantes celules de cada samples s'han utilitzat
+#ct <-Filt_selected_combined_CT@meta.data %>% as.data.table
+#ct[, .N, by = c("sample", "orig.ident")] #nomes m'agafa 4000 en total i ho vull 4000 de cada dataset (1860 de CT_2 i 2140 de CT_1)
+
+#Selected_CH_1 <- Seurat_CH_1$nCount_RNA %>% sort(.,decreasing = T) %>% names %>% head(4000)
+#Seurat_CH_1 <- Seurat_CH_1[,Selected_CH_1]
+
+#Selected_CH_2 <- Seurat_CH_2$nCount_RNA %>% sort(.,decreasing = T) %>% names %>% head(4000)
+#Seurat_CH_2 <- Seurat_CH_2[,Selected_CH_2]
+
+#Selected_R_1 <- Seurat_R_1$nCount_RNA %>% sort(.,decreasing = T) %>% names %>% head(4000)
+#Seurat_R_1<- Seurat_R_1[,Selected_R_1]
+
+#Selected_R_2 <- Seurat_R_2$nCount_RNA %>% sort(.,decreasing = T) %>% names %>% head(4000)
+#Seurat_R_2<- Seurat_R_2[,Selected_R_2]
+
+#Merge replicates
+combined.CT <- merge(Seurat_CT_1, y = Seurat_CT_2, add.cell.ids = c("Liver_CT_1", "Liver_CT_2"), project = "Control")
+combined.CH <- merge(Seurat_CH_1, y = Seurat_CH_2, add.cell.ids = c("Liver_CH_1", "Liver_CH_2"), project = "Cirrhotic")
+combined.R <- merge(Seurat_R_1, y = Seurat_R_2, add.cell.ids = c("Liver_R_1", "Liver_R_2"), project = "Regression")
+
+#CONFIRMAR MOSTRES I NUM DE CELS
+ct <-combined.CT@meta.data %>% as.data.table
+ct[, .N, by = c("sample", "orig.ident")] #D'aquesta manera son 4000 i 4000 OK!
+
+ch <-combined.CH@meta.data %>% as.data.table
+ch[, .N, by = c("sample", "orig.ident")]
+
+r <-combined.R@meta.data %>% as.data.table
+r[, .N, by = c("sample", "orig.ident")]
+
+
+##FILTER OUT LOW QUALITY NUCLEI (nCount_RNA<25000, nCount_ATAC > 1000 & <100000, nCount_RNA>1000, nucleosome_signal <2, TSS.enrichment >1, mitoRatio <0.2)
+
+
+combined.CT <-subset(
+  x = combined.CT, 
+  subset = nCount_ATAC < 100000 &
+    nCount_ATAC > 1000 & 
+    nCount_RNA < 25000 & 
+    nCount_RNA > 1000 &
+    nucleosome_signal < 2 &
+    TSS.enrichment >1 &
+    mitoRatio<0.2)
+combined.CH <-subset(
+  x = combined.CH, 
+  subset = nCount_ATAC < 100000 &
+    nCount_ATAC > 1000 & 
+    nCount_RNA < 25000 & 
+    nCount_RNA > 1000 &
+    nucleosome_signal < 2 &
+    TSS.enrichment >1 &
+    mitoRatio<0.2)
+combined.R <-subset(
+  x = combined.R, 
+  subset = nCount_ATAC < 100000 &
+    nCount_ATAC > 1000 & 
+    nCount_RNA < 25000 & 
+    nCount_RNA > 1000 &
+    nucleosome_signal < 2 &
+    TSS.enrichment >1 &
+    mitoRatio<0.2)
+
+###############################
+####Merge filtered datasets####
+###############################
+
+Filt_liver_multiome <-merge(combined.CT, y=c(combined.CH,combined.R)) 
+
+merged <- Filt_liver_multiome@meta.data %>% as.data.table
+merged[, .N, by = c("sample", "orig.ident")]
+
+##NO MORE QC IN THIS SCRIPT
+
+#QC
+
+VlnPlot(liver.combined, features = c("mitoRatio", "nCount_RNA", "nFeature_RNA", "nCount_ATAC", "TSS.enrichment", "nucleosome_signal"), group.by = "sample")
+VlnPlot(liver.combined, features = c("mitoRatio", "nCount_RNA", "nFeature_RNA", "nCount_ATAC", "TSS.enrichment", "nucleosome_signal"), group.by = "orig.ident")
+
+saveRDS(Filt_liver_multiome, file = "Filt_liver_multiome.rds")
+
+#NORMALITZAR GENE EXPRESSION
+DefaultAssay(Filt_liver_multiome) <- "RNA"
+
+#split dataset into a list of seurat objects
+Filt_list <- SplitObject(Filt_liver_multiome, split.by = "orig.ident")
+
+#normalize and identify variable features for each dataseet independently
+Filt_list <- lapply(X = Filt_list, FUN = function(x) {
+      x <- NormalizeData(x)
+      x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+#select features that are repeteadly variable across datasets for integration
+features <- SelectIntegrationFeatures (object.list = Filt_list)
+
+#Perform Integration
+
+liver.anchors <-FindIntegrationAnchors (object.list = Filt_list, anchor.features = features)
+liver.combined <- IntegrateData (anchorset = liver.anchors)
+
+#Perform integrated analysis
+DefaultAssay(liver.combined) <-"integrated"
+
+#Run the standard workflow for visualization and clustering
+
+liver.combined <- ScaleData(liver.combined, verbose = F)
+liver.combined <- RunPCA(liver.combined, npcs = 30, verbose = F)
+
+saveRDS(liver.combined, file = "liver.combined_bo.rds")
+
+#Cluster cells
+
+liver.combined <- FindNeighbors(liver.combined, dims = 1:10)
+liver.combined <- FindClusters(liver.combined, resolution = 0.2)
+liver.combined <-RunUMAP(liver.combined, reduction = "pca", dims = 1:30)
+liver.combined <- RunTSNE(liver.combined, reduction = "pca", dims = 1:30)
+
+DimPlot(liver.combined, reduction = "umap", group.by = "seurat_clusters", split.by = "orig.ident")
+DimPlot(liver.combined, reduction = "umap", group.by = "seurat_clusters")
+DimPlot(liver.combined, reduction = "umap", group.by = "sample")
+DimPlot(liver.combined, reduction = "tsne", group.by = "sample")
+DimPlot(liver.combined, reduction = "tsne", group.by = "seurat_clusters")
+
+DimPlot(liver.combined, reduction = "pca", group.by = "sample")
+
+liver.combined.markers <- FindAllMarkers(liver.combined, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+liver.combined.markers.list <- liver.combined.markers%>%group_by(cluster) %>% top_n(n=5, wt = avg_log2FC)
+liver.combined.markers.select <- liver.combined.markers %>% group_by(cluster) %>% top_n(n=10, wt = avg_log2FC) #%>% select(cluster, marker_gene=gene)
+
+liver.combined$orig.ident <-factor(x = liver.combined$orig.ident, levels = c("Control", "Cirrhotic", "Regression")) #Reordenar
+liver.combined$sample <-factor(x = liver.combined$sample, levels = c("Liver_CT_1", "Liver_CT_2", "Liver_CH_1", "Liver_CH_2", "Liver_R_1", "Liver_R_2"))
+
+DimPlot(liver.combined, reduction = "umap", group.by = "orig.ident", split.by = "seurat_clusters")
+FeaturePlot(object = liver.combined, features = c("Gzmm", "Ccl5", "Klri1", "Tmem154", "Cd69"))
+FeaturePlot(object = liver.combined, features = c("Cyp2a1"))
+VlnPlot(liver.combined, features = c("C3", "Kdr", "Cd163", "Cd68", "Ank3", "Col1a1", "Pdgfrb", "Ntm", "G6pc"))
+
+DoHeatmap(liver.combined, features = liver.combined.markers.list$gene, group.by = "seurat_clusters") + theme (text = element_text(size = 7))
+
+
+features_liver <- c("C3", "Kdr", "Cd163", "Cd68", "Ank3", "Col1a1", "Pdgfrb", "Ntm" )
+VlnPlot(obj = liver.combined, features = c("Cyp2c7", "Kdr", "Cd68"))
+VlnPlot(obj = liver.combined, features = c( "Col3a1", "Slc4a4", "Cd163"))
+
+##Manual annotation
+
+old_clusters_id_1 <- c("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11")
+new_clusters_id_1 <- c("Midcentral hepatocytes", "LSEC", "Kupffer cells M1", "HSCs", "Midportal hepatocytes", "Central hepatocytes", "Plasma cells", "T-cells", "Kupffer cell M2", "Cholangiocytes", "B-cells", "UK")
+names(new_clusters_id_1) <- levels(liver.combined)
+liver.combined <- RenameIdents(liver.combined, new_clusters_id_1)
+
+liver.combined[["new.ident"]] <- Idents(object = liver.combined)
+
+DimPlot(liver.combined, reduction = "pca", label.size = 3, group.by = "orig.ident")
+
+DimPlot(liver.combined, reduction = "umap", group.by = "orig.ident")
+
+table(Idents(liver.combined)) #taula amb tots els nums de cells
+liver.cells <-liver.combined@meta.data %>% as.data.table
+
+liver.cells[, .N, by = c("sample", "new.ident")] %>% dcast(., sample ~ new.ident, value.var = "N")
+
+#proportion of cell population in different conditions
+
+prop_cells <-prop.table(table(Idents(liver.combined), liver.combined$orig.ident), margin = 2) 
+
+print.data.frame(liver_nums)
+
+###DOUBLETS by Doublet Finder###
+
+#remotes::install_github('chris-mcginnis-ucsf/DoubletFinder')
+library(DoubletFinder)
+#pk identification 
+
+pk_list_liver <- paramSweep_v3(liver.combined, PCs = 1:10, sct = T) #en teoria diu sct = F, pero aixi no funciona. Potser pk son dades integrades?
+
+pk_stats_liver_1 <- summarizeSweep(pk_list_liver, GT = FALSE)
+
+bcmvn_liver_1 <- find.pK(pk_stats_liver_1)
+
+#Homotypic Doublet proportion estimate
+
+annotations <- liver.combined@meta.data$new.ident
+
+homotypic.prop <-modelHomotypic(annotations)
+nExp_poi <- round(0.035*nrow(liver.combined@meta.data)) ##assuming 3.5% doublet formation rate
+nExp_poi_adj <- round(nExp_poi*(1-homotypic.prop))
+
+##Run DoubletFinder with barying classification stringencies
+
+liver.combined <-doubletFinder_v3(liver.combined, PCs = 1:10, pN = 0.25, pK = 0.09, nExp = nExp_poi, reuse.pANN = FALSE, sct = TRUE)
+
+FeaturePlot(liver.combined, features = "pANN_0.25_0.09_340")
+
+saveRDS(liver.combined, file = "liver.combined.rds")
+
+##further subdivision focusing on HSC
+
+WhichCells(liver.combined, idents = "HSC")
+
+#subset expression matrix for HSC
+HSC_1 <- subset(liver_integrated_1, idents = "HSC")
+
+DimPlot(HSC_1, reduction = "umap", split.by = "sample")
+DimPlot(HSC_1, reduction = "umap")
+
+HSC_1 <- FindNeighbors(HSC_1, dims = 1:10)
+HSC_1 <- FindClusters(HSC_1, resolution = 0.2)
+HSC_1 <- RunUMAP(HSC_1, dims = 1:10)
+
+HSC_markers_1 <- FindAllMarkers(HSC_1, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+HSC_markers_list_1 <- HSC_markers_1%>%group_by(cluster) %>% top_n(n=5, wt = avg_log2FC)
+HSC_mark_list_select_1 <- HSC_markers_1 %>% group_by(cluster) %>% top_n(n=5, wt = avg_log2FC) %>% select(cluster, marker_gene=gene)
+
+DoHeatmap(HSC_1, features = HSC_mark_list_select_1$marker_gene, group.by = "seurat_clusters") + theme (text = element_text(size = 7))
+
+FeaturePlot(object = HSC_1, features = c("Efemp1"))
+VlnPlot(obj = HSC_1, features = c("Nrxn1", "Pcdh7")) #quiescent markers
+VlnPlot(obj = HSC_1, features = c("Pdgfrb", "Col1a1", "Col1a2")) #activation markers
+VlnPlot(obj = HSC_1, features = c("Adamts2", "Lama2", "Lamb1")) #activation markers
+VlnPlot(obj = HSC_1, features = c("Efemp1"), split.by = "sample") #activation markers
+VlnPlot(obj = HSC_1, features = c("Efemp1")) #activation markers
+
+
+prop.table(table(Idents(HSC_1), HSC_1$sample), margin = 2) 
+
+##further subdivision focusing on KC
+
+WhichCells(liver_integrated_1, idents = c("Kupffer Cells M2", "Kupffer Cells M1"))
+
+#subset expression matrix for HSC
+KC_1 <- subset(liver_integrated_1, idents = c("Kupffer Cells M2", "Kupffer Cells M1"))
+
+table(Idents(KC_1)) #taula amb tots els nums de cells
+md_kc <-KC_1@meta.data %>% as.data.table
+
+kc_nums <-md_kc[, .N, by = c("sample", "new.ident")] %>% dcast(., sample ~ new.ident, value.var = "N")
+
+prop.table(table(Idents(KC_1), KC_1$sample), margin = 2) 
+
+DimPlot(KC_1, reduction = "umap", split.by = "sample")
+DimPlot(KC_1, reduction = "umap")
+
+KC_1 <- FindNeighbors(KC_1, dims = 1:10)
+KC_1 <- FindClusters(KC_1, resolution = 0.2)
+KC_1 <- RunUMAP(KC_1, dims = 1:10)
+
+KC_markers_1 <- FindAllMarkers(KC_1, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+KC_markers_list_1 <- KC_markers_1%>%group_by(cluster) %>% top_n(n=5, wt = avg_log2FC)
+KC_mark_list_select_1 <- KC_markers_1 %>% group_by(cluster) %>% top_n(n=10, wt = avg_log2FC) %>% select(cluster, marker_gene=gene)
+
+DoHeatmap(KC_1, features = KC_mark_list_select_1$marker_gene, group.by = "seurat_clusters") + theme (text = element_text(size = 7))
+
+DimPlot(KC_1, reduction = "umap")
+DimPlot(KC_1, reduction = "umap", split.by = "sample", label = T)
+
+FeaturePlot(KC_1, features = c("Mrc1", "Cd163"), split.by = "sample") #M2
+VlnPlot(KC_1, features = c("Arsj", "Cd163"))
+FeaturePlot(KC_1, features = "Kcnma1")
+FeaturePlot(KC_1, features = "Cd38", split.by = "sample")
+
+
+prop.table(table(Idents(KC_1), KC_1$sample), margin = 2) 
+
+
+####ATAC ANALYSIS###
+
+#Call peaks using MACS2
+
+peaks_liver_multiome_1 <- CallPeaks(Subset_liver_multiome_1, macs2.path = "/usr/bin/macs2")
+
+#remove peaks on nonstandard chromosomes and in genomic blacklist regions
+
+peaks_liver_multiome_st <- keepStandardChromosomes(peaks_liver_multiome_1, pruning.mode = "coarse")
+
+#peaks_liver_multiome_1 <- subsetByOverlaps(x = peaks_liver_multiome_1, ranges = blacklist_)# no data for rat
+
+#quantify counts in each peak
+
+macs2_counts <- FeatureMatrix(
+  fragments = Fragments(Subset_liver_multiome_1),
+  features = peaks_liver_multiome_1,
+  cells = colnames(Subset_liver_multiome_1)
+)
+
+#create a new assay using the MACS2 peak set and add it to the Seurat object
+
+Subset_liver_multiome_1[["peaks"]] <- CreateChromatinAssay(
+  counts = macs2_counts,
+  fragments = fragp
+)
