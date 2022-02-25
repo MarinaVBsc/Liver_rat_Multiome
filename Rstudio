@@ -26,21 +26,23 @@ library(htmltools)
 library(tidyverse)
 library(magrittr)
 library(fs)
-#install.packages('ggplot2')
 library(ggplot2)
 library(dplyr)
-#install.packages('Signac')
 library(Signac)
 #install.packages("EnsDb.Rnorvegicus.v79")
 library(EnsDb.Rnorvegicus.v79)
 library(GenomicRanges)
 library(data.table)
-
+library(reshape2)
+library(RColorBrewer)
 library(BSgenome.Rnorvegicus.UCSC.rn6)
+library(SeuratDisk)
+install.packages("rlinger")
+library(harmony)
 
 #install.packages("BiocManager")
 
-#BiocManager::install("BSgenome.Rnorvegicus.UCSC.rn6")
+BiocManager::install("rlinger")
 #BiocManager::install("EnsDb.Rnorvegicus.v79", force = TRUE)
 
 #Organize input data#
@@ -68,6 +70,7 @@ fragpath_R <- "/work/marina.v/Multiome/Rat_liver_multiome_R_1/outs/atac_fragment
 fragpath_CT_2 <- "/work/marina.v/Multiome/Rat_liver_multiome_CT_2/outs/atac_fragments.tsv.gz"
 fragpath_CH_2 <- "/work/marina.v/Multiome/Rat_liver_multiome_CH_2/outs/atac_fragments.tsv.gz"
 fragpath_R_2 <- "/work/marina.v/Multiome/Rat_liver_multiome_R_2/outs/atac_fragments.tsv.gz"
+
 
 #get the annotations for Rn6
 
@@ -196,9 +199,6 @@ Seurat_R_1 <-TSSEnrichment(Seurat_R_1)
 Seurat_R_2 <-NucleosomeSignal (Seurat_R_2)
 Seurat_R_2 <- TSSEnrichment (Seurat_R_2)
 
-
-
-###NOT DONE IN THE FINAL SET
 #Filtering top4000 cells or nuclei
 #Selected_CT_1 <- Seurat_CT_1$nCount_RNA %>% sort(.,decreasing = T) %>% names %>% head(4000)
 #Seurat_CT_1<- Seurat_CT_1[,Selected_CT_1]
@@ -239,7 +239,9 @@ ch[, .N, by = c("sample", "orig.ident")]
 r <-combined.R@meta.data %>% as.data.table
 r[, .N, by = c("sample", "orig.ident")]
 
+
 ##FILTER OUT LOW QUALITY NUCLEI (nCount_RNA<25000, nCount_ATAC > 1000 & <100000, nCount_RNA>1000, nucleosome_signal <2, TSS.enrichment >1, mitoRatio <0.2)
+
 
 combined.CT <-subset(
   x = combined.CT, 
@@ -282,8 +284,8 @@ merged[, .N, by = c("sample", "orig.ident")]
 
 #QC
 
-VlnPlot(liver.combined, features = c("mitoRatio", "nCount_RNA", "nFeature_RNA", "nCount_ATAC", "TSS.enrichment", "nucleosome_signal"), group.by = "sample")
-VlnPlot(liver.combined, features = c("mitoRatio", "nCount_RNA", "nFeature_RNA", "nCount_ATAC", "TSS.enrichment", "nucleosome_signal"), group.by = "orig.ident")
+VlnPlot(Filt_liver_multiome, features = c("mitoRatio", "nCount_RNA", "nFeature_RNA", "nCount_ATAC", "TSS.enrichment", "nucleosome_signal"), group.by = "sample", pt.size = 0)
+VlnPlot(Filt_liver_multiome, features = c("mitoRatio", "nCount_RNA", "nFeature_RNA", "nCount_ATAC", "TSS.enrichment", "nucleosome_signal"), group.by = "orig.ident", pt.size = 0)
 
 saveRDS(Filt_liver_multiome, file = "Filt_liver_multiome.rds")
 
@@ -315,8 +317,6 @@ DefaultAssay(liver.combined) <-"integrated"
 liver.combined <- ScaleData(liver.combined, verbose = F)
 liver.combined <- RunPCA(liver.combined, npcs = 30, verbose = F)
 
-saveRDS(liver.combined, file = "liver.combined_bo.rds")
-
 #Cluster cells
 
 liver.combined <- FindNeighbors(liver.combined, dims = 1:10)
@@ -324,39 +324,72 @@ liver.combined <- FindClusters(liver.combined, resolution = 0.2)
 liver.combined <-RunUMAP(liver.combined, reduction = "pca", dims = 1:30)
 liver.combined <- RunTSNE(liver.combined, reduction = "pca", dims = 1:30)
 
+liver.combined$orig.ident <-factor(x = liver.combined$orig.ident, levels = c("Control", "Cirrhotic", "Regression")) #Reordenar
+liver.combined$sample <-factor(x = liver.combined$sample, levels = c("Liver_CT_1", "Liver_CT_2", "Liver_CH_1", "Liver_CH_2", "Liver_R_1", "Liver_R_2"))
+
+#VISUALIZE
+
 DimPlot(liver.combined, reduction = "umap", group.by = "seurat_clusters", split.by = "orig.ident")
 DimPlot(liver.combined, reduction = "umap", group.by = "seurat_clusters")
-DimPlot(liver.combined, reduction = "umap", group.by = "sample")
-DimPlot(liver.combined, reduction = "tsne", group.by = "sample")
+DimPlot(liver.combined, reduction = "umap", group.by = "orig.ident")
+DimPlot(liver.combined, reduction = "tsne", group.by = "orig.ident")
 DimPlot(liver.combined, reduction = "tsne", group.by = "seurat_clusters")
 
 DimPlot(liver.combined, reduction = "pca", group.by = "sample")
 
+#FIND MARKERS
+
 liver.combined.markers <- FindAllMarkers(liver.combined, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
 liver.combined.markers.list <- liver.combined.markers%>%group_by(cluster) %>% top_n(n=5, wt = avg_log2FC)
-liver.combined.markers.select <- liver.combined.markers %>% group_by(cluster) %>% top_n(n=10, wt = avg_log2FC) #%>% select(cluster, marker_gene=gene)
+liver.combined.markers.top10 <- liver.combined.markers %>% group_by(cluster) %>% top_n(n=10, wt = avg_log2FC) #%>% select(cluster, marker_gene=gene)
+liver.combined.markers.top20 <- liver.combined.markers %>% group_by(cluster) %>% top_n(n=20, wt = avg_log2FC) #%>% select(cluster, marker_gene=gene)
 
-liver.combined$orig.ident <-factor(x = liver.combined$orig.ident, levels = c("Control", "Cirrhotic", "Regression")) #Reordenar
-liver.combined$sample <-factor(x = liver.combined$sample, levels = c("Liver_CT_1", "Liver_CT_2", "Liver_CH_1", "Liver_CH_2", "Liver_R_1", "Liver_R_2"))
+DimPlot(liver.combined, reduction = "umap", split.by = "seurat_clusters")
 
-DimPlot(liver.combined, reduction = "umap", group.by = "orig.ident", split.by = "seurat_clusters")
-FeaturePlot(object = liver.combined, features = c("Gzmm", "Ccl5", "Klri1", "Tmem154", "Cd69"))
-FeaturePlot(object = liver.combined, features = c("Cyp2a1"))
-VlnPlot(liver.combined, features = c("C3", "Kdr", "Cd163", "Cd68", "Ank3", "Col1a1", "Pdgfrb", "Ntm", "G6pc"))
+#Distribution among clusters from https://www.singlecellcourse.org/scrna-seq-dataset-integration.html
+
+count_table <- table(liver.combined@meta.data$seurat_clusters, liver.combined@meta.data$orig.ident)
+
+FeaturePlot(object = liver.combined, features = "mitoRatio", split.by = "orig.ident")
+
+#HEPATOCYTES
+
+FeaturePlot(object = liver.combined, features = c( "Acss2")) + scale_colour_gradientn(colours = rev(brewer.pal(n = 11, name = "Spectral"))) 
+
+VlnPlot(liver.combined, features = c("Scd", "Hmgcs1", "Acss1", "Msmo1", "Lepr"), pt.size = 0) #Periportal markers MacParland1
+
+VlnPlot(liver.combined, features = c("Sec16b"), pt.size = 0) 
 
 DoHeatmap(liver.combined, features = liver.combined.markers.list$gene, group.by = "seurat_clusters") + theme (text = element_text(size = 7))
 
+#HSC
 
+hsc <- subset(x= liver.combined, idents = c("4"))
+hsc <- FindNeighbors(hsc, dims = 1:10)
+hsc <- FindClusters(hsc, resolution = 0.2)
+hsc <- RunUMAP(hsc, dims = 1:10)
+
+DimPlot(hsc, reduction = "umap", group.by = "seurat_clusters", split.by = "orig.ident")
+
+HSC_markers <- FindAllMarkers(hsc, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+HSC_markers_list <- HSC_markers%>%group_by(cluster) %>% top_n(n=5, wt = avg_log2FC)
+
+count_hsc <- table(hsc@meta.data$seurat_clusters, hsc@meta.data$orig.ident)
+
+quiescent_markers <- c("Pth1r", "")
+
+FeaturePlot(object = hsc, features = c("Reln"), split.by = "seurat_clusters")
+FeaturePlot(object = hsc, features = c("Des"), split.by = "orig.ident")
 features_liver <- c("C3", "Kdr", "Cd163", "Cd68", "Ank3", "Col1a1", "Pdgfrb", "Ntm" )
 VlnPlot(obj = liver.combined, features = c("Cyp2c7", "Kdr", "Cd68"))
 VlnPlot(obj = liver.combined, features = c( "Col3a1", "Slc4a4", "Cd163"))
 
 ##Manual annotation
 
-old_clusters_id_1 <- c("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11")
-new_clusters_id_1 <- c("Midcentral hepatocytes", "LSEC", "Kupffer cells M1", "HSCs", "Midportal hepatocytes", "Central hepatocytes", "Plasma cells", "T-cells", "Kupffer cell M2", "Cholangiocytes", "B-cells", "UK")
-names(new_clusters_id_1) <- levels(liver.combined)
-liver.combined <- RenameIdents(liver.combined, new_clusters_id_1)
+old_clusters_id <- c("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12")
+new_clusters_id <- c("Pericentral Hepatocytes", "Pericentral Hepatocytes", "LSEC", "Periportal Hepatocytes +", "HSCs", "Kupffer cells M2", "Periportal Hepatocytes ++", "Kupffer cells M1", "T/NK-cells", "B-cells", "Periportal Hepatocytes", "Cholangiocytes" ,"UK")
+names(new_clusters_id) <- levels(liver.combined)
+liver.combined <- RenameIdents(liver.combined, new_clusters_id)
 
 liver.combined[["new.ident"]] <- Idents(object = liver.combined)
 
