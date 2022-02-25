@@ -69,7 +69,6 @@ fragpath_CT_2 <- "/work/marina.v/Multiome/Rat_liver_multiome_CT_2/outs/atac_frag
 fragpath_CH_2 <- "/work/marina.v/Multiome/Rat_liver_multiome_CH_2/outs/atac_fragments.tsv.gz"
 fragpath_R_2 <- "/work/marina.v/Multiome/Rat_liver_multiome_R_2/outs/atac_fragments.tsv.gz"
 
-
 #get the annotations for Rn6
 
 annotation_Rn6 <- GetGRangesFromEnsDb(ensdb = EnsDb.Rnorvegicus.v79)
@@ -197,6 +196,9 @@ Seurat_R_1 <-TSSEnrichment(Seurat_R_1)
 Seurat_R_2 <-NucleosomeSignal (Seurat_R_2)
 Seurat_R_2 <- TSSEnrichment (Seurat_R_2)
 
+
+
+###NOT DONE IN THE FINAL SET
 #Filtering top4000 cells or nuclei
 #Selected_CT_1 <- Seurat_CT_1$nCount_RNA %>% sort(.,decreasing = T) %>% names %>% head(4000)
 #Seurat_CT_1<- Seurat_CT_1[,Selected_CT_1]
@@ -237,9 +239,7 @@ ch[, .N, by = c("sample", "orig.ident")]
 r <-combined.R@meta.data %>% as.data.table
 r[, .N, by = c("sample", "orig.ident")]
 
-
 ##FILTER OUT LOW QUALITY NUCLEI (nCount_RNA<25000, nCount_ATAC > 1000 & <100000, nCount_RNA>1000, nucleosome_signal <2, TSS.enrichment >1, mitoRatio <0.2)
-
 
 combined.CT <-subset(
   x = combined.CT, 
