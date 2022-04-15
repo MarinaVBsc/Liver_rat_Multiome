@@ -1,0 +1,890 @@
+# Load RNA the dataset (from Seurat)
+CT_1 <-Read10X_h5("/Users/marina/Documents/Projectes/Multiome_rat/GeneExpression/Rat_liver_multiome_CT_1/filtered_feature_bc_matrix.h5")
+CH_1 <-Read10X_h5("/Users/marina/Documents/Projectes/Multiome_rat/GeneExpression/Rat_liver_multiome_CH_1/filtered_feature_bc_matrix.h5")
+R_1 <-Read10X_h5("/Users/marina/Documents/Projectes/Multiome_rat/GeneExpression/Rat_liver_multiome_R_1/filtered_feature_bc_matrix.h5")
+
+CT_2 <-Read10X_h5('/Users/marina/Documents/Projectes/Multiome_rat/GeneExpression/Rat_liver_multiome_CT_2/filtered_feature_bc_matrix.h5')
+CH_2 <-Read10X_h5('/Users/marina/Documents/Projectes/Multiome_rat/GeneExpression/Rat_liver_multiome_CH_2/filtered_feature_bc_matrix.h5')
+R_2 <-Read10X_h5('/Users/marina/Documents/Projectes/Multiome_rat/GeneExpression/Rat_liver_multiome_R_2/filtered_feature_bc_matrix.h5')
+
+#Load ATAC data
+
+fragpath_CT <- "/Users/marina/Documents/Projectes/Multiome_rat/ATAC/Rat_liver_multiome_CT_1/atac_fragments.tsv.gz"
+fragpath_CH <- "/Users/marina/Documents/Projectes/Multiome_rat/ATAC/Rat_liver_multiome_CH_1/atac_fragments.tsv.gz"
+fragpath_R <- "/Users/marina/Documents/Projectes/Multiome_rat/ATAC/Rat_liver_multiome_R_1/atac_fragments.tsv.gz"
+
+fragpath_CT_2 <- "/Users/marina/Documents/Projectes/Multiome_rat/ATAC/Rat_liver_multiome_CT_2/atac_fragments.tsv.gz"
+fragpath_CH_2 <- "/Users/marina/Documents/Projectes/Multiome_rat/ATAC/Rat_liver_multiome_CH_2/atac_fragments.tsv.gz"
+fragpath_R_2 <- "/Users/marina/Documents/Projectes/Multiome_rat/ATAC/Rat_liver_multiome_R_2/atac_fragments.tsv.gz"
+
+#get the annotations for Rn6
+
+annotation_Rn6 <- GetGRangesFromEnsDb(ensdb = EnsDb.Rnorvegicus.v79)
+seqlevelsStyle(annotation_Rn6) <- "UCSC"
+
+#read peak sets (from https://satijalab.org/signac/articles/merging.html) To unify peaks
+
+peaks.ct1 <-read.table(
+  file = "/Users/marina/Documents/Projectes/Multiome_rat/ATAC/Bed/ct1_atac_peaks.bed",
+  col.names = c("chr", "start", "end")
+)
+
+peaks.ct2 <-read.table(
+  file = "/Users/marina/Documents/Projectes/Multiome_rat/ATAC/Bed/ct2_atac_peaks.bed",
+  col.names = c("chr", "start", "end")
+)
+peaks.ch1 <-read.table(
+  file = "/Users/marina/Documents/Projectes/Multiome_rat/ATAC/Bed/ch1_atac_peaks.bed",
+  col.names = c("chr", "start", "end")
+)
+peaks.ch2 <-read.table(
+  file = "/Users/marina/Documents/Projectes/Multiome_rat/ATAC/Bed/ch2_atac_peaks.bed",
+  col.names = c("chr", "start", "end")
+)
+peaks.r1 <-read.table(
+  file = "/Users/marina/Documents/Projectes/Multiome_rat/ATAC/Bed/r1_atac_peaks.bed",
+  col.names = c("chr", "start", "end")
+)
+peaks.r2 <-read.table(
+  file = "/Users/marina/Documents/Projectes/Multiome_rat/ATAC/Bed/r2_atac_peaks.bed",
+  col.names = c("chr", "start", "end")
+)
+
+#Convert to genomic ranges
+gr.ct1 <-makeGRangesFromDataFrame(peaks.ct1)
+gr.ct2 <-makeGRangesFromDataFrame(peaks.ct2)
+gr.ch1 <-makeGRangesFromDataFrame(peaks.ch1)
+gr.ch2 <-makeGRangesFromDataFrame(peaks.ch2)
+gr.r1 <-makeGRangesFromDataFrame(peaks.r1)
+gr.r2 <-makeGRangesFromDataFrame(peaks.r2)
+
+#Create a unified set og peaks to quantify in each dataset
+combined.peaks <- reduce(x=c(gr.ct1, gr.ct2, gr.ch1, gr.ch2, gr.r1, gr.r2))
+
+#Filter out bad peaks based on lenght
+peakwidths <-width(combined.peaks)
+
+combined.peaks <- combined.peaks[peakwidths <10000 & peakwidths >20]
+
+#Create fragment objects
+
+#load metadata
+
+md.ct1 <- read.table(
+  file = "/Users/marina/Documents/Projectes/Multiome_rat/ATAC/Bed/ct1_per_barcode_metrics.csv",
+  stringsAsFactors = FALSE,
+  sep = ",",
+  header = TRUE,
+  row.names = 1,
+)[-1,-c(1:2)] #remove the first row and column 2&3
+md.ct1 <- dplyr::filter(md.ct1, is_cell == 1)
+
+md.ct2 <- read.table(
+  file = "/Users/marina/Documents/Projectes/Multiome_rat/ATAC/Bed/ct2_per_barcode_metrics.csv",
+  stringsAsFactors = FALSE,
+  sep = ",",
+  header = TRUE,
+  row.names = 1,
+)[-1,-c(1:2)] #remove the first row and column 2&3
+md.ct2 <- dplyr::filter(md.ct2, is_cell == 1)
+
+md.ch1 <- read.table(
+  file = "/Users/marina/Documents/Projectes/Multiome_rat/ATAC/Bed/ch1_per_barcode_metrics.csv",
+  stringsAsFactors = FALSE,
+  sep = ",",
+  header = TRUE,
+  row.names = 1,
+)[-1,-c(1:2)] #remove the first row and column 2&3
+md.ch1 <- dplyr::filter(md.ch1, is_cell == 1)
+
+md.ch2 <- read.table(
+  file = "/Users/marina/Documents/Projectes/Multiome_rat/ATAC/Bed/ch2_per_barcode_metrics.csv",
+  stringsAsFactors = FALSE,
+  sep = ",",
+  header = TRUE,
+  row.names = 1,
+)[-1,-c(1:2)] #remove the first row and column 2&3
+md.ch2 <- dplyr::filter(md.ch2, is_cell == 1)
+
+md.r1 <- read.table(
+  file = "/Users/marina/Documents/Projectes/Multiome_rat/ATAC/Bed/r1_per_barcode_metrics.csv",
+  stringsAsFactors = FALSE,
+  sep = ",",
+  header = TRUE,
+  row.names = 1,
+)[-1,-c(1:2)] #remove the first row and column 2&3
+md.r1 <- dplyr::filter(md.r1, is_cell == 1)
+
+md.r2 <- read.table(
+  file = "/Users/marina/Documents/Projectes/Multiome_rat/ATAC/Bed/r2_per_barcode_metrics.csv",
+  stringsAsFactors = FALSE,
+  sep = ",",
+  header = TRUE,
+  row.names = 1,
+)[-1,-c(1:2)] #remove the first row and column 2&3
+md.r2 <- dplyr::filter(md.r2, is_cell == 1)
+
+#initial filtering of low count cells (IT DOESNT exist in Multiome)
+#md.ct1 <- md.ct1[md.ct1$passed_filters >500,]
+
+atac_frags_CT_1 <- CreateFragmentObject(path = fragpath_CT, cells = rownames(md.ct1))
+atac_frags_CH_1 <- CreateFragmentObject(path = fragpath_CH, cells = rownames(md.ch1))
+atac_frags_R_1 <- CreateFragmentObject(path = fragpath_R, cells = rownames(md.r1))
+atac_frag_CT_2 <- CreateFragmentObject(path = fragpath_CT_2, cells = rownames(md.ct2))
+atac_frag_CH_2 <- CreateFragmentObject(path = fragpath_CH_2, cells = rownames(md.ch2))
+atac_frag_R_2 <- CreateFragmentObject(path = fragpath_R_2, cells = rownames(md.r2))
+
+#quantify peaks in each dataset
+
+ct1.counts <- FeatureMatrix(
+  fragments = atac_frags_CT_1,
+  features = combined.peaks,
+  cells = rownames(md.ct1)
+)
+ct2.counts <- FeatureMatrix(
+  fragments = atac_frag_CT_2,
+  features = combined.peaks,
+  cells = rownames(md.ct2)
+)
+ch1.counts <- FeatureMatrix(
+  fragments = atac_frags_CH_1,
+  features = combined.peaks,
+  cells = rownames(md.ch1)
+)
+ch2.counts <- FeatureMatrix(
+  fragments = atac_frag_CH_2,
+  features = combined.peaks,
+  cells = rownames(md.ch2)
+)
+r1.counts <- FeatureMatrix(
+  fragments = atac_frags_R_1,
+  features = combined.peaks,
+  cells = rownames(md.r1)
+)
+r2.counts <- FeatureMatrix(
+  fragments = atac_frag_R_2,
+  features = combined.peaks,
+  cells = rownames(md.r2)
+)
+
+##################################################
+#Create Seurat Object for RNA data
+
+Seurat_CT_1<- CreateSeuratObject(counts = CT_1$'Gene Expression', assay = "RNA", project = "Control")
+#CT_1, project = "LiverCT" , min.cells = 3, min.features = 200)
+Seurat_CT_1$sample <- "Liver_CT_1"
+Seurat_CT_2<- CreateSeuratObject(counts = CT_2$'Gene Expression', assay = "RNA", project = "Control")
+#CT_1, project = "LiverCT" , min.cells = 3, min.features = 200)
+Seurat_CT_2$sample <- "Liver_CT_2"
+
+Seurat_CH_1<- CreateSeuratObject(counts = CH_1$'Gene Expression', assay = "RNA", project = "Cirrhotic")
+Seurat_CH_1$sample <- "Liver_CH_1"
+Seurat_CH_2<- CreateSeuratObject(counts = CH_2$'Gene Expression', assay = "RNA", project = "Cirrhotic")
+Seurat_CH_2$sample <- "Liver_CH_2"
+
+Seurat_R_1<- CreateSeuratObject(counts = R_1$'Gene Expression', assay = "RNA", project = "Regression")
+Seurat_R_1$sample <- "Liver_R_1"
+Seurat_R_2<- CreateSeuratObject(counts = R_2$'Gene Expression', assay = "RNA", project = "Regression")
+Seurat_R_2$sample <- "Liver_R_2"
+
+#create ATAC assay and add it to the object
+Seurat_CT_1[["ATAC"]] <- CreateChromatinAssay (ct1.counts, fragments = atac_frags_CT_1, annotation = annotation_Rn6, sep = c(":", "-"))
+Seurat_CT_2[["ATAC"]] <- CreateChromatinAssay (ct2.counts, fragments = atac_frag_CT_2, annotation = annotation_Rn6, sep = c(":", "-"))
+Seurat_CH_1[["ATAC"]] <- CreateChromatinAssay (ch1.counts, fragments = atac_frags_CH_1, annotation = annotation_Rn6, sep = c(":", "-"))
+Seurat_CH_2[["ATAC"]] <- CreateChromatinAssay (ch2.counts, fragments = atac_frag_CH_2, annotation = annotation_Rn6, sep = c(":", "-"))
+Seurat_R_1[["ATAC"]] <- CreateChromatinAssay (r1.counts, fragments = atac_frags_R_1, annotation = annotation_Rn6, sep = c(":", "-"))
+Seurat_R_2[["ATAC"]] <- CreateChromatinAssay (r2.counts, fragments = atac_frag_R_2, annotation = annotation_Rn6, sep = c(":", "-"))
+
+#MITORATIO
+Seurat_CT_1$mitoRatio <- PercentageFeatureSet(object = Seurat_CT_1, pattern = "Mt-")
+Seurat_CT_1$mitoRatio <- Seurat_CT_1@meta.data$mitoRatio/100
+Seurat_CT_2$mitoRatio <- PercentageFeatureSet(object = Seurat_CT_2, pattern = "Mt-")
+Seurat_CT_2$mitoRatio <- Seurat_CT_2@meta.data$mitoRatio/100
+
+Seurat_CH_1$mitoRatio <- PercentageFeatureSet(object = Seurat_CH_1, pattern = "Mt-")
+Seurat_CH_1$mitoRatio <- Seurat_CH_1@meta.data$mitoRatio/100
+Seurat_CH_2$mitoRatio <- PercentageFeatureSet(object = Seurat_CH_2, pattern = "Mt-")
+Seurat_CH_2$mitoRatio <- Seurat_CH_2@meta.data$mitoRatio/100
+
+Seurat_R_1$mitoRatio <- PercentageFeatureSet(object = Seurat_R_1, pattern = "Mt-")
+Seurat_R_1$mitoRatio <- Seurat_R_1@meta.data$mitoRatio/100
+Seurat_R_2$mitoRatio <- PercentageFeatureSet(object = Seurat_R_2, pattern = "Mt-")
+Seurat_R_2$mitoRatio <- Seurat_R_2@meta.data$mitoRatio/100
+
+#ATAC QC
+DefaultAssay(Seurat_CT_1) <-"ATAC"
+Seurat_CT_1 <- NucleosomeSignal(Seurat_CT_1)
+Seurat_CT_1 <-TSSEnrichment(Seurat_CT_1)
+
+DefaultAssay(Seurat_CT_2) <-"ATAC"
+Seurat_CT_2 <- NucleosomeSignal(Seurat_CT_2)
+Seurat_CT_2 <-TSSEnrichment(Seurat_CT_2)
+
+DefaultAssay(Seurat_CH_1) <-"ATAC"
+Seurat_CH_1 <- NucleosomeSignal(Seurat_CH_1)
+Seurat_CH_1 <-TSSEnrichment(Seurat_CH_1)
+
+DefaultAssay(Seurat_CH_2) <-"ATAC"
+Seurat_CH_2 <- NucleosomeSignal(Seurat_CH_2)
+Seurat_CH_2 <-TSSEnrichment(Seurat_CH_2)
+
+DefaultAssay(Seurat_R_1) <-"ATAC"
+Seurat_R_1 <- NucleosomeSignal(Seurat_R_1)
+Seurat_R_1 <-TSSEnrichment(Seurat_R_1)
+
+DefaultAssay(Seurat_R_2) <-"ATAC"
+Seurat_R_2 <- NucleosomeSignal(Seurat_R_2)
+Seurat_R_2 <-TSSEnrichment(Seurat_R_2)
+
+
+##FILTER OUT LOW QUALITY NUCLEI (nCount_RNA<25000, nCount_ATAC > 1000 & <100000, nCount_RNA>1000, nucleosome_signal <2, TSS.enrichment >1, mitoRatio <0.2)
+options(future.globals.maxSize=30000 *1024^5)
+Seurat_CT_1 <-subset(
+  x = Seurat_CT_1, 
+  subset = nCount_ATAC < 100000 &
+    nCount_ATAC > 1000 & 
+    nCount_RNA < 25000 & 
+    nCount_RNA > 500 &
+    mitoRatio<0.2 &
+    nucleosome_signal <2 &
+    TSS.enrichment >1)
+Seurat_CT_2 <-subset(
+  x = Seurat_CT_2, 
+  subset = nCount_ATAC < 100000 &
+    nCount_ATAC > 1000 & 
+    nCount_RNA < 25000 & 
+    nCount_RNA > 500 &
+    mitoRatio<0.2 &
+    nucleosome_signal <2 &
+    TSS.enrichment >1)
+Seurat_CH_1 <-subset(
+  x = Seurat_CH_1, 
+  subset = nCount_ATAC < 100000 &
+    nCount_ATAC > 1000 & 
+    nCount_RNA < 25000 & 
+    nCount_RNA > 500 &
+    mitoRatio<0.2 &
+    nucleosome_signal <2 &
+    TSS.enrichment >1)
+Seurat_CH_2 <-subset(
+  x = Seurat_CH_2, 
+  subset = nCount_ATAC < 100000 &
+    nCount_ATAC > 1000 & 
+    nCount_RNA < 25000 & 
+    nCount_RNA > 500 &
+    mitoRatio<0.2 &
+    nucleosome_signal <2 &
+    TSS.enrichment >1)
+Seurat_R_1 <-subset(
+  x = Seurat_R_1, 
+  subset = nCount_ATAC < 100000 &
+    nCount_ATAC > 1000 & 
+    nCount_RNA < 25000 & 
+    nCount_RNA > 500 &
+    mitoRatio<0.2 &
+    nucleosome_signal <2 &
+    TSS.enrichment >1)
+Seurat_R_2 <-subset(
+  x = Seurat_R_2, 
+  subset = nCount_ATAC < 100000 &
+    nCount_ATAC > 1000 & 
+    nCount_RNA < 25000 & 
+    nCount_RNA > 500 &
+    mitoRatio<0.2 &
+    nucleosome_signal <2 &
+    TSS.enrichment >1)
+
+saveRDS(Seurat_CT_1, file = "Seurat_CT_1.rds")
+saveRDS(Seurat_CT_2, file = "Seurat_CT_2.rds")
+saveRDS(Seurat_CH_1, file = "Seurat_CH_1.rds")
+saveRDS(Seurat_CH_2, file = "Seurat_CH_2.rds")
+saveRDS(Seurat_R_1, file = "Seurat_R_1.rds")
+saveRDS(Seurat_R_2, file = "Seurat_R_2.rds")
+
+#Merge replicates
+combined.CT <- merge(Seurat_CT_1, y = Seurat_CT_2, add.cell.ids = c("Liver_CT_1", "Liver_CT_2"), project = "Control")
+combined.CH <- merge(Seurat_CH_1, y = Seurat_CH_2, add.cell.ids = c("Liver_CH_1", "Liver_CH_2"), project = "Cirrhotic")
+combined.R <- merge(Seurat_R_1, y = Seurat_R_2, add.cell.ids = c("Liver_R_1", "Liver_R_2"), project = "Regression")
+
+#CONFIRMAR MOSTRES I NUM DE CELS
+ct <-combined.CT@meta.data %>% as.data.table
+ct[, .N, by = c("sample", "orig.ident")] #D'aquesta manera son 4000 i 4000 OK!
+
+ch <-combined.CH@meta.data %>% as.data.table
+ch[, .N, by = c("sample", "orig.ident")]
+
+r <-combined.R@meta.data %>% as.data.table
+r[, .N, by = c("sample", "orig.ident")]
+
+all.merged <-merge(combined.CT, y=c(combined.CH,combined.R))
+
+#QC
+
+VlnPlot(all.merged, features = c("mitoRatio", "nCount_RNA", "nFeature_RNA", "nCount_ATAC", "nucleosome_signal", "TSS.enrichment"), group.by = "sample", pt.size = 0, ncol = 3)
+
+#Add genes per UMI 
+all.merged$log10GenesPerUMI<- log10(all.merged$nFeature_RNA)/log10(all.merged$nCount_RNA)
+#Create metadata dataframe
+all.merged$orig.ident <-factor(x = all.merged$orig.ident, levels = c("Control", "Cirrhotic", "Regression")) #Reordenar
+all.merged$sample <-factor(x = all.merged$sample, levels = c("Liver_CT_1", "Liver_CT_2", "Liver_CH_1", "Liver_CH_2", "Liver_R_1", "Liver_R_2")) #Reordenar
+
+metadata <-all.liver.combined@meta.data
+
+#Visualize the number of cell counts per sample
+metadata %>% 
+  ggplot(aes(x = orig.ident, fill=sample)) +
+  geom_bar() +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) +
+  ggtitle("NCells")
+
+#add metadata back to seurat object
+all.liver.combined@meta.data <- metadata
+
+#Visualize number of UMI/transcripts per cell
+metadata %>%
+  ggplot(aes(color=orig.ident, x=nCount_RNA, fill=orig.ident)) +
+  geom_density(alpha = 0.2) +
+  scale_x_log10() +
+  theme_classic() +
+  ylab("Cell density") +
+  geom_vline(xintercept = 500)
+
+# Visualize the correlation (Scatter plot) between genes detected and number of UMIs and determine whether strong presence of cells with low numbers of genes/UMIs
+metadata %>% 
+  ggplot(aes(x=nCount_RNA, y=nFeature_RNA, color=orig.ident)) + 
+  geom_point() + 
+  stat_smooth(method=lm, fullrange = TRUE) +
+  scale_x_log10() + 
+  scale_y_log10() + 
+  theme_classic() +
+  geom_vline(xintercept = 500) +
+  geom_hline(yintercept = 500) +
+  scale_color_hue(l=60, c = 60)
+
+#Genes detected Histogram
+metadata %>%
+  ggplot(aes(color=orig.ident, x=nFeature_RNA, fill=orig.ident)) +
+  geom_density(alpha = 0.2) +
+  scale_x_log10() +
+  theme_classic() +
+  geom_vline(xintercept = 300)
+
+#Genes detected Boxplot
+metadata %>%
+  ggplot(aes(x=orig.ident, y=nFeature_RNA, fill=orig.ident)) +
+  geom_boxplot() +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  theme(plot.title = element_text(hjust = 0.5,face = "bold")) +
+  ggtitle("NCells vs NGenes")
+
+#Mitochondrial counts
+metadata %>%
+  ggplot(aes(color=orig.ident, x=mitoRatio, fill=orig.ident)) +
+  geom_density(alpha = 0.2) +
+  scale_x_log10() +
+  theme_classic() +
+  geom_vline(xintercept = 0.2)
+
+#complexity of gene expression: visualizing genes detected per UMI
+#expected to be above 0.8
+metadata %>% 
+  ggplot(aes(x=log10GenesPerUMI, color=orig.ident, fill=orig.ident)) +
+  geom_density(alpha = 0.2) +
+  theme_classic() +
+  geom_vline(xintercept = 0.8)
+
+#NORMALITZAR GENE EXPRESSION
+DefaultAssay(all.merged) <- "RNA"
+
+all.merged <- SCTransform(all.merged)
+all.merged <- RunPCA(all.merged)
+
+saveRDS(all.merged, file = "all.merged.rds")
+
+DefaultAssay(all.merged) <- "ATAC"
+all.merged <- FindTopFeatures(all.merged, min.cutoff = 5)
+all.merged <-RunTFIDF(all.merged)
+all.merged <-RunSVD(all.merged)
+#all.merged <- RunUMAP(all.merged, dims = 2:50, reduction = 'lsi')
+
+DefaultAssay(all.merged) <- "SCT"
+all.merged <- FindMultiModalNeighbors(
+  object = all.merged,
+  reduction.list = list("pca", "lsi"),
+  dims.list = list(1:50, 2:40),
+  modality.weight.name = "RNA.weight",
+  verbose = TRUE
+)
+
+all.merged <- RunUMAP(
+  object = all.merged,
+  nn.name = "weighted.nn",
+  assay = "RNA",
+  verbose = TRUE
+)
+
+DimPlot(all.merged, label = TRUE, repel = TRUE, reduction = "umap")
+
+DefaultAssay(all.merged) <- "RNA"
+
+#split dataset into a list of seurat objects
+Filt_list <- SplitObject(all.merged, split.by = "orig.ident")
+
+#normalize and identify variable features for each dataset independently
+Filt_list <- lapply(X = Filt_list, FUN = function(x) {
+  x <- NormalizeData(x)
+  x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+#select features that are repeteadly variable across datasets for integration
+features <- SelectIntegrationFeatures (object.list = Filt_list)
+
+#Perform Integration
+liver.anchors <-FindIntegrationAnchors (object.list = Filt_list, anchor.features = features)
+
+all.liver.combined <- IntegrateData (anchorset = liver.anchors)
+
+saveRDS(all.liver.combined, file = "all.liver.combined.rds")
+
+#Perform integrated analysis
+DefaultAssay(all.liver.combined) <-"integrated"
+
+#Run the standard workflow for visualization and clustering
+
+all.liver.combined <- ScaleData(all.liver.combined, verbose = F)
+all.liver.combined <- RunPCA(all.liver.combined, npcs = 30, verbose = F)
+
+#Cluster cells
+
+all.liver.combined <- FindNeighbors(all.liver.combined, dims = 1:10)
+all.liver.combined <- FindClusters(all.liver.combined, resolution = 0.2)
+all.liver.combined <- RunUMAP(all.liver.combined, reduction = "pca", dims = 1:30)
+all.liver.combined <- RunTSNE(all.liver.combined, reduction = "pca", dims = 1:30)
+
+#Reordenar
+all.liver.combined$orig.ident <-factor(x = all.liver.combined$orig.ident, levels = c("Control", "Cirrhotic", "Regression")) #Reordenar
+all.liver.combined$sample <-factor(x = all.liver.combined$sample, levels = c("Liver_CT_1", "Liver_CT_2", "Liver_CH_1", "Liver_CH_2", "Liver_R_1", "Liver_R_2"))
+
+#VISUALIZE
+
+DimPlot(all.liver.combined, reduction = "umap", group.by = "seurat_clusters", split.by = "orig.ident", label = T)
+DimPlot(all.liver.combined, reduction = "umap", group.by = "seurat_clusters", split.by = "orig.ident")
+DimPlot(all.liver.combined, reduction = "tsne", group.by = "orig.ident")
+DimPlot(all.liver.combined, reduction = "tsne", group.by = "seurat_clusters")
+FeaturePlot(object = all.liver.combined, features = "mitoRatio")
+
+VlnPlot(all.liver.combined, features = c("Col1a1", "Adamtsl2", "Acta2"), pt.size = 0)
+
+#FIND MARKERS
+
+liver.combined.markers <- FindAllMarkers(all.liver.combined, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+liver.combined.markers.list <- liver.combined.markers%>%group_by(cluster) %>% top_n(n=10, wt = avg_log2FC)
+liver.combined.markers.top10 <- liver.combined.markers %>% group_by(cluster) %>% top_n(n=10, wt = avg_log2FC) #%>% select(cluster, marker_gene=gene)
+liver.combined.markers.top20 <- liver.combined.markers %>% group_by(cluster) %>% top_n(n=20, wt = avg_log2FC) #%>% select(cluster, marker_gene=gene)
+
+#Distribution among clusters from https://www.singlecellcourse.org/scrna-seq-dataset-integration.html
+
+count_table <- table(all.liver.combined@meta.data$seurat_clusters, all.liver.combined@meta.data$orig.ident)
+
+FeaturePlot(object = all.liver.combined, features = c("Col3a1"))
+VlnPlot(object = all.liver.combined, features = c("Kdr"), pt.size = 0)
+RidgePlot(all.liver.combined, features = interzonal_markers, ncol = 2) + RotatedAxis()
+
+table(all.liver.combined@meta.data$seurat_clusters)
+round(prop.table(table(Idents(all.liver.combined), all.liver.combined$sample), margin = 2), 3) 
+
+#Percentage cells per condition
+
+pt <-table(Idents(all.liver.combined), all.liver.combined$orig.ident)
+pt <-as.data.frame(pt)
+pt$Var1 <-as.character(pt$Var1)
+
+ggplot(pt, aes(x =Var2, y= Freq, fill = Var1 )) +
+  theme_bw(base_size = 15) +
+  geom_col(position = "fill", width = 0.5) +
+  xlab("Sample") +
+  ylab("Proportion") +
+  scale_fill_manual(values = brewer.pal(12, "Paired")) +
+  theme(legend.title = element_blank()) + 
+  theme(axis.text.x = element_text(angle = 90)) +
+  ggtitle("Proportion Cells")
+
+#HEPATOCYTES
+
+hepatocytes <- subset(x = all.liver.combined, idents = c("0", "1", "5", "6"))
+hepatocytes <- FindNeighbors(hepatocytes, dims = 1:10)
+hepatocytes <- FindClusters(hepatocytes, resolution = 0.2)
+hepatocytes <- RunUMAP(hepatocytes, dims = 1:10)
+hepatocytes <- RunTSNE(hepatocytes, reduction = "pca", dims = 1:30)
+
+saveRDS(hepatocytes, file = "hepatocytes.rds")
+
+DimPlot(hepatocytes, reduction = "umap", group.by = "seurat_clusters" )
+DimPlot(hepatocytes, reduction = "umap", group.by = "seurat_clusters", split.by = "orig.ident")
+DimPlot(hepatocytes, reduction = "umap", group.by = "seurat_clusters", split.by = "sample")
+
+Hepatocytes_markers <- FindAllMarkers(hepatocytes, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+Hepatocytes_markers_list <- Hepatocytes_markers%>%group_by(cluster) %>% top_n(n=10, wt = avg_log2FC)
+
+FeaturePlot(object = hepatocytes, features = "Glul")
+
+VlnPlot(hepatocytes, features = c("Glul"), pt.size = 0)
+
+all_hepatocytes_markers <- c("Hal", "Hmgcs1", "Acss2", "C3", "Scd", "Apoa2", "Apoc3", "Fga", "Fgg", "Orm1","Acly","Fabp1", "Sod1", "Hamp","Igfbp2","Sds",  "Abcc2", "Bhmt", "Akr1c1", "Cyp1a2","Glul", "Cyp27a1","Cyp2e1", "Slc1a2")
+periportal_markers <- c("Hal", "Hmgcs1", "Acss2", "C3", "Scd", "Apoa2", "Apoc3", "Fga", "Fgg", "Orm1", "Acly")
+interzonal_markers <- c("Fabp1", "Sod1", "Hamp", "Igfbp2", "Sds")
+pericentral_markers <- c("Abcc2", "Bhmt", "Akr1c1", "Cyp1a2", "Glul", "Cyp27a1", "Cyp2e1", "Slc1a2")
+
+DotPlot(hepatocytes, features = all_hepatocytes_markers, dot.scale = 6) + RotatedAxis() + coord_flip() + theme(axis.text.x = element_text(size = 10), axis.text.y = element_text(size = 10))
+DotPlot(hepatocytes, features = all_hepatocytes_markers, split.by = "orig.ident", dot.scale = 4, cols = c("Red", "Green", "Blue")) + theme(axis.text.x = element_text(angle = 90))
+
+count_hepatocytes <- table(hepatocytes@meta.data$seurat_clusters, hepatocytes@meta.data$orig.ident)
+round(prop.table(table(Idents(hepatocytes), hepatocytes$sample), margin = 2), 2) 
+
+table(Idents(hepatocytes), hepatocytes$orig.ident)
+
+#Percentage
+
+pt_hep <-table(Idents(hepatocytes), hepatocytes$sample)
+pt_hep <-as.data.frame(pt_hep)
+pt_hep$Var1 <-as.character(pt_hep$Var1)
+
+ggplot(pt_hep, aes(x =Var2, y= Freq, fill = Var1 )) +
+  theme_bw(base_size = 15) +
+  geom_col(position = "fill", width = 0.5) +
+  xlab("Sample") +
+  ylab("Proportion") +
+  scale_fill_manual(values = brewer.pal(12, "Paired")) +
+  theme(legend.title = element_blank()) + 
+  theme(axis.text.x = element_text(angle = 90))
+
+#Annotation
+
+new_hep <- c("Midcentral Hepatocytes", "Pericentral Hepatocytes", "Midportal Hepatocytes", "Periportal Hepatocytes", "Unidentified")
+names(new_clusters_id) <- levels(all.liver.combined)
+all.liver.combined <- RenameIdents(all.liver.combined, new_clusters_id)
+
+all.liver.combined <- SetIdent(all.liver.combined, value = all.liver.combined@meta.data$seurat_clusters)
+
+#HSC
+DefaultAssay(hsc) <- "integrated"
+
+hsc <- subset(x= all.liver.combined, idents = c("4"))
+hsc <- FindNeighbors(hsc, dims = 1:20)
+hsc <- FindClusters(hsc, resolution = 0.1)
+hsc <- RunUMAP(hsc, dims = 1:10)
+hsc<- RunTSNE(hsc, reduction = "pca", dims = 1:30)
+
+DimPlot(hsc, reduction = "umap", group.by = "seurat_clusters", split.by = "orig.ident")
+DimPlot(hsc, reduction = "tsne", group.by = "seurat_clusters", split.by = "orig.ident")
+
+HSC_markers <- FindAllMarkers(hsc, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+HSC_markers_list <- HSC_markers%>%group_by(cluster) %>% top_n(n=30, wt = avg_log2FC)
+
+count_hsc <- table(hsc@meta.data$seurat_clusters, hsc@meta.data$sample)
+
+all_hsc_markers <- c("Pth1r", "Reln", "Colec11", "Hgf", "Nrxn3", "Nrxn1", "Pcdh7", "Col3a1", "Pdgfrb", "Acta2", "Tagln", "Col1a1",  "Adamts2", "Dcn", "Aox1")
+quiescent_markers <- c("Pth1r", "Reln", "Colec11", "Hgf", "Nrxn3", "Nrxn1", "Pcdh7")
+activation_markers <- c("Col3a1", "Pdgfrb", "Acta2", "Tagln", "Col1a1", "Adamts2", "Lama2", "Lamb1", "Dcn")
+
+DotPlot(hsc, features = all_hsc_markers, dot.scale = 6) + RotatedAxis() + coord_flip() + theme(axis.text.x = element_text(size = 10), axis.text.y = element_text(size = 10))
+DotPlot(hsc, features = c("Col3a1"))
+
+FeaturePlot(object = hsc, features = c("Acta2"))
+FeaturePlot(object = hsc, features = "nFeature_RNA")
+
+VlnPlot(hsc, features = activation_markers, split.by = "orig.ident", pt.size = 0)
+VlnPlot(hsc, features = quiescent_markers,  pt.size = 0)
+VlnPlot(hsc, features = c("Lrat"),  pt.size = 0)
+
+#Percentage
+
+pt_hsc <-table(Idents(hsc), hsc$sample)
+pt_hsc <-as.data.frame(pt_hsc)
+pt_hsc$Var1 <-as.character(pt_hsc$Var1)
+
+ggplot(pt_hsc, aes(x =Var2, y= Freq, fill = Var1 )) +
+  theme_bw(base_size = 15) +
+  geom_col(position = "fill", width = 0.5) +
+  xlab("Sample") +
+  ylab("Proportion") +
+  scale_fill_manual(values = brewer.pal(12, "Paired")) +
+  theme(legend.title = element_blank()) + 
+  theme(axis.text.x = element_text(angle = 90)) +
+  ggtitle("Proportion HSC")
+
+round(prop.table(table(Idents(hsc), hsc$sample), margin = 2), 2) 
+
+#KC
+
+kc<- subset(all.liver.combined, idents = c("3", "7"))
+kc <- FindNeighbors(kc, dims = 1:10)
+kc <- FindClusters(kc, resolution = 0.2)
+kc <- RunUMAP(kc, dims = 1:10)
+kc<- RunTSNE(kc, reduction = "pca", dims = 1:30)
+
+DimPlot(kc, reduction = "umap", group.by = "seurat_clusters")
+DimPlot(kc, reduction = "umap", group.by = "seurat_clusters", split.by = "orig.ident")
+DimPlot(kc, reduction = "tsne", group.by = "seurat_clusters", split.by = "orig.ident")
+
+KC_markers <- FindAllMarkers(kc, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+KC_markers_list <- KC_markers%>%group_by(cluster) %>% top_n(n=10, wt = avg_log2FC)
+
+count_kc <- table(kc@meta.data$seurat_clusters, kc@meta.data$orig.ident)
+
+FeaturePlot(object = kc, features = c(""), split.by = "orig.ident")
+
+healthy_kc_markers <- c("Pparg", "Cd5l", "Clec4f")
+M1_markers <- c("Il1b", "Cd68", "Mmp9", "Cd74", "S100a8", "S100a9", "Vcan", "S100a6", "Mnda", "Il18", "Lyz2") #Inflammatory
+M2_markers <- c("Cd163", "Marco", "Mrc1", "Cd68", "Cd5l", "Vsig4", "Ccdc88a", "Ctsb", "Vcam1", "Hmox1") #Immunoregulatory/Tolerogenic
+all_kc_markers <- c("Il1b", "Cd68", "Mmp9", "Cd74", "S100a8", "S100a9", "Vcan", "S100a6", "Mnda", "Il18","Lyz2", "Cd163", "Marco", "Mrc1", "Cd5l", "Vsig4", "Ccdc88a", "Ctsb", "Vcam1", "Hmox1")
+
+VlnPlot(obj = kc, features = all_kc_markers, pt.size = 0)
+VlnPlot(obj = kc, features = c("Marco"), pt.size = 0, split.by = "orig.ident")
+VlnPlot(obj = kc, features = c("Cd68", "Cd163", "Cd74", "Marco", "Cd5l"), pt.size = 0) #liver resident KC
+VlnPlot(obj = kc, features = c("Cd68", "S100a9", "Cd74", "S100a8", "Vcan", "Lyz2"), pt.size = 0) #inflammatory
+
+DotPlot(kc, features = all_kc_markers, dot.scale = 6) + RotatedAxis() + coord_flip() + theme(axis.text.x = element_text(size = 10), axis.text.y = element_text(size = 10))
+
+DotPlot(kc, features = c("Cd163", "Marco", "Cd68"), dot.scale = 6, split.by = "orig.ident", cols = c("Green", "Red", "Blue")) +
+  RotatedAxis() + coord_flip() + theme(axis.text.x = element_text(size = 10), axis.text.y = element_text(size = 10))
+
+#Percentage
+
+pt_kc <-table(Idents(kc), kc$sample)
+pt_kc <-as.data.frame(pt_kc)
+pt_kc$Var1 <-as.character(pt_kc$Var1)
+
+ggplot(pt_kc, aes(x =Var2, y= Freq, fill = Var1 )) +
+  theme_bw(base_size = 15) +
+  geom_col(position = "fill", width = 0.5) +
+  xlab("Sample") +
+  ylab("Proportion") +
+  scale_fill_manual(values = brewer.pal(12, "Paired")) +
+  theme(legend.title = element_blank()) + 
+  theme(axis.text.x = element_text(angle = 90)) +
+  ggtitle("Proportion KC")
+
+#LSEC
+
+lsec<- subset(all.liver.combined, idents = c("2"))
+lsec <- FindNeighbors(lsec, dims = 1:10)
+lsec <- FindClusters(lsec, resolution = 0.2)
+lsec <- RunUMAP(lsec, dims = 1:10)
+lsec<- RunTSNE(lsec, reduction = "pca", dims = 1:30)
+
+DimPlot(lsec, reduction = "umap", group.by = "seurat_clusters")
+DimPlot(lsec, reduction = "umap", group.by = "seurat_clusters", split.by = "sample")
+
+LSEC_markers <- FindAllMarkers(lsec, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+LSEC_markers_list <- LSEC_markers%>%group_by(cluster) %>% top_n(n=10, wt = avg_log2FC)
+
+count_lsec <- table(lsec@meta.data$seurat_clusters, lsec@meta.data$sample)
+
+LSEC_periportal <- c("Pecam1", "Mgp", "Sparcl1", "Clec14a", "Igfbp7", "Vwf", "Cd9", "Id3", "Aqp1", "Ptprc") #low expression of Stab2
+LSEC_centralvenous <- c("Stab2", "Stab1", "Ifi27", "Oit3", "Ramp3", "Sgk1", "Dnase1l3", "Lifr", "Sparc", "Adgrl4", "Fcgr2b")
+Portal_EC <- c("Vwf", "Eng", "Pecam1", "Ptgds", "Timp3", "Gpm6a", "Ptprb","Ifi27") #no Stab2
+Lsec_all_markers <- c("Pecam1", "Mgp", "Sparcl1", "Clec14a", "Igfbp7", "Vwf", "Cd9", "Id3", "Aqp1","Fcgr2b" ,"Stab2", "Stab1", "Ifi27", "Ramp3", "Sgk1", "Dnase1l3", "Lifr", "Sparc", "Adgrl4", "Eng","Ptgds", "Timp3", "Gpm6a", "Ptprb")
+
+DotPlot(lsec, features = Lsec_all_markers, dot.scale = 6) + RotatedAxis() + coord_flip() + theme(axis.text.x = element_text(size = 10), axis.text.y = element_text(size = 10))
+
+#Percentage
+
+pt_lsec <-table(Idents(lsec), lsec$orig.ident)
+pt_lsec <-as.data.frame(pt_lsec)
+pt_lsec$Var1 <-as.character(pt_lsec$Var1)
+
+ggplot(pt_lsec, aes(x =Var2, y= Freq, fill = Var1 )) +
+  theme_bw(base_size = 15) +
+  geom_col(position = "fill", width = 0.5) +
+  xlab("Sample") +
+  ylab("Proportion") +
+  scale_fill_manual(values = brewer.pal(12, "Paired")) +
+  theme(legend.title = element_blank()) + 
+  theme(axis.text.x = element_text(angle = 90))
+#Cholangiocytes
+
+cholangio<- subset(all.liver.combined, idents = c("9"))
+cholangio <- FindNeighbors(cholangio, dims = 1:10)
+cholangio<- FindClusters(cholangio, resolution = 0.5)
+cholangio <- RunUMAP(cholangio, dims = 1:10)
+cholangio<- RunTSNE(cholangio, reduction = "pca", dims = 1:30)
+
+DimPlot(cholangio, reduction = "umap", group.by = "seurat_clusters", split.by = "sample")
+DimPlot(cholangio, reduction = "tsne", group.by = "seurat_clusters")
+
+VlnPlot(cholangio, features = c("Epcam", "Sox9", "Onecut1", "Aqp1"))
+
+cholangio_markers <- FindAllMarkers(cholangio, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+cholangio_markers_list <- cholangio_markers%>%group_by(cluster) %>% top_n(n=10, wt = avg_log2FC)
+
+count_cholangio <- table(cholangio@meta.data$seurat_clusters, cholangio@meta.data$orig.ident)
+
+chol_mark <- c( "Cd24", "Aqp1", "Pigr", "Spp1", "Krt18", "Krt8") #mature cholangiocyte "Sox9", "Epcam",??
+hepatocyte_chol_markers <- c("Hp", "Ambp", "Hal")
+progenitor_associated <-c("Tdo2","Hnf1b","Onecut1","Cdh1", "Prom1", "Sox9", "Sox6", "Anpep", "Maml3")
+
+all_cholang_markers <-c( "Cd24", "Krt8", "Krt18", "Epcam","Sox9","Hp", "Ambp", "Hal","Cdh1", "Tdo2","Hnf1b","Onecut1", "Maml3") 
+
+DotPlot(cholangio, features = all_cholang_markers, dot.scale = 6) + RotatedAxis() + coord_flip() + theme(axis.text.x = element_text(size = 10), axis.text.y = element_text(size = 10))
+
+
+#Percentage
+
+pt_chol <-table(Idents(cholangio), cholangio$orig.ident)
+pt_chol <-as.data.frame(pt_chol)
+pt_chol$Var1 <-as.character(pt_chol$Var1)
+
+ggplot(pt_chol, aes(x =Var2, y= Freq, fill = Var1 )) +
+  theme_bw(base_size = 15) +
+  geom_col(position = "fill", width = 0.5) +
+  xlab("Sample") +
+  ylab("Proportion") +
+  scale_fill_manual(values = brewer.pal(12, "Paired")) +
+  theme(legend.title = element_blank()) + 
+  theme(axis.text.x = element_text(angle = 90))
+
+#Tcells/NK-cells
+
+tcell<- subset(all.liver.combined, idents = c("8"))
+tcell <- FindNeighbors(tcell, dims = 1:10)
+tcell<- FindClusters(tcell, resolution = 0.3)
+tcell <- RunUMAP(tcell, dims = 1:10)
+tcell<- RunTSNE(tcell, reduction = "pca", dims = 1:30)
+
+DimPlot(tcell, reduction = "umap", group.by = "seurat_clusters", split.by = "sample")
+DimPlot(tcell, reduction = "tsne", group.by = "seurat_clusters")
+
+tcell_markers <- FindAllMarkers(tcell, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+tcell_markers_list <- tcell_markers%>%group_by(cluster) %>% top_n(n=10, wt = avg_log2FC)
+
+count_tcell<- table(tcell@meta.data$seurat_clusters, tcell@meta.data$sample)
+tcell_num <- tcell@meta.data %>% as.data.table
+tcell_num[,.N, by= c("sample", "seurat_clusters")] %>% dcast(., sample ~ seurat_clusters, value.var = "N")
+
+VlnPlot(obj = tcell, features = c("Cd3e", "S100a6","S100a4", "Cd3d", "Il7r"), pt.size = 0) #ab
+VlnPlot(obj = tcell, features = c("Nkg7", "Tbx21","Clic5", "Cd3d", "Fcgr3a", "Cd7"), pt.size = 0) # dg
+VlnPlot(obj = tcell, features = c("Top2a", "Mki67","Tuba1b", "Nusap1"), pt.size = 0) #reactive T
+VlnPlot(obj = tcell, features = c("Aoah", "Fcer1g", "Plac8", "Zeb2"), pt.size = 0) #Nk
+VlnPlot(obj = tcell, features = c("Arhgap24", "Bank1", "Cd74", "Irf8", "Birc3", "Sell"), pt.size = 0) #Bcells
+VlnPlot(obj = tcell, features = c("Fcgr3a", "Prf1", "Klrd1", "Fcer1g"), pt.size = 0) #similar NK i dg
+VlnPlot(obj = tcell, features = c("Ccl4")) #check
+
+#B-cells 
+
+bcell<- subset(all.liver.combined, idents = c("10", "11"))
+bcell <- FindNeighbors(bcell, dims = 1:10)
+bcell<- FindClusters(bcell, resolution = 0.2)
+bcell <- RunUMAP(bcell, dims = 1:30)
+bcell<- RunTSNE(bcell, reduction = "pca", dims = 1:10)
+
+DimPlot(bcell, reduction = "umap", group.by = "seurat_clusters", split.by = "sample")
+DimPlot(bcell, reduction = "tsne", group.by = "seurat_clusters", split.by = "sample")
+
+count_bcell<- table(bcell@meta.data$seurat_clusters, bcell@meta.data$sample)
+
+bcell_num <- bcell@meta.data %>% as.data.table
+bcell_num[,.N, by= c("sample", "seurat_clusters")] %>% dcast(., sample ~ seurat_clusters, value.var = "N")
+
+bcell_markers <- FindAllMarkers(bcell, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+bcell_markers_list <- bcell_markers%>%group_by(cluster) %>% top_n(n=10, wt = avg_log2FC)
+
+VlnPlot(bcell, features = c("Cd74", "Bank1", "Birc3", "Ms4a1"), pt.size = 0) #bcells
+VlnPlot(bcell, features = c("Ighm"), pt.size = 0)
+
+#B-cells + Tcells/NK-cells
+
+tcell_bcell<- subset(all.liver.combined, idents = c("8", "10", "11"))
+tcell_bcell <- FindNeighbors(tcell_bcell, dims = 1:10)
+tcell_bcell<- FindClusters(tcell_bcell, resolution = 0.4)
+tcell_bcell <- RunUMAP(tcell_bcell, dims = 1:30)
+tcell_bcell<- RunTSNE(tcell_bcell, reduction = "pca", dims = 1:10)
+
+DimPlot(tcell_bcell, reduction = "umap", group.by = "seurat_clusters", split.by = "sample")
+DimPlot(tcell_bcell, reduction = "tsne", group.by = "seurat_clusters", split.by = "sample")
+
+count_tcell_bcell<- table(tcell_bcell@meta.data$seurat_clusters, tcell_bcell@meta.data$sample)
+
+##nuclei per cluster per sample
+tcell_bcell_num <- tcell_bcell@meta.data %>% as.data.table
+tcell_bcell_num[,.N, by= c("sample", "seurat_clusters")] %>% dcast(., sample ~ seurat_clusters, value.var = "N")
+
+tcell_bcell_markers <- FindAllMarkers(tcell_bcell, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+tcell_bcell_markers_list <- tcell_bcell_markers%>%group_by(cluster) %>% top_n(n=10, wt = avg_log2FC)
+
+VlnPlot(obj = tcell_bcell, features = c("Cd3e", "S100a6","S100a4", "Cd3d", "Il7r"), pt.size = 0) #ab
+VlnPlot(obj = tcell_bcell, features = c("Nkg7", "Tbx21","Clic5", "Cd3d", "Fcgr3a", "Cd7"), pt.size = 0) # dg
+VlnPlot(obj = tcell_bcell, features = c("Top2a", "Mki67","Tuba1b", "Nusap1"), pt.size = 0) #reactive T
+VlnPlot(obj = tcell_bcell, features = c("Aoah", "Fcer1g", "Plac8", "Zeb2"), pt.size = 0) #Nk
+VlnPlot(obj = tcell_bcell, features = c("Arhgap24", "Bank1", "Cd74", "Irf8", "Birc3", "Sell"), pt.size = 0) #Bcells
+VlnPlot(obj = tcell_bcell, features = c("Fcgr3a", "Prf1", "Klrd1", "Fcer1g"), pt.size = 0) #similar NK i dg
+VlnPlot(obj = tcell_bcell, features = c("Gzmk"), pt.size = 0) #check
+
+
+##Manual annotation
+
+old_clusters_id <- c("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11")
+new_clusters_id <- c("Pericentral Hepatocytes", "Pericentral Hepatocytes", "LSEC", "Kupffer cells M2", "HSCs", "Periportal Hepatocytes", "Periportal Hepatocytes" ,"Kupffer cells M1", "T/NK-cells", "Cholangiocytes", "B-cell" ,"B-cell")
+names(new_clusters_id) <- levels(all.liver.combined)
+all.liver.combined <- RenameIdents(all.liver.combined, new_clusters_id)
+
+all.liver.combined <- SetIdent(all.liver.combined, value = all.liver.combined@meta.data$seurat_clusters)
+
+
+##ATAC
+
+DefaultAssay(all.liver.combined) <- "ATAC"
+
+all.liver.combined <- RunTFIDF(all.liver.combined)
+all.liver.combined <- FindTopFeatures(all.liver.combined,min.cutoff = 20)
+all.liver.combined <- RunSVD(all.liver.combined)
+all.liver.combined <- RunUMAP(all.liver.combined, dims = 2:50, reduction = 'lsi')
+
+DimPlot(all.liver.combined, group.by = 'orig.ident', pt.size = 0.1)
+
+#Linking peaks to genes
+
+main.chroms <-standardChromosomes(BSgenome.Rnorvegicus.UCSC.rn6)
+keep.peaks <- which(as.character(seqnames(granges(all.liver.combined))) %in% main.chroms)
+all.liver.combined[["ATAC"]] <= subset(all.liver.combined[["ATAC"]], features =rownames(all.liver.combined[["ATAC"]])[keep.peaks])
+
+#change Indent
+all.liver.combined <- SetIdent(all.liver.combined, value = all.liver.combined@meta.data$seurat_clusters)
+
+#change names chromosomes
+
+seqnames(BSgenome.Rnorvegicus.UCSC.rn6) <-gsub("^chr", "", seqnames(BSgenome.Rnorvegicus.UCSC.rn6))
+
+#first compute the GC content for each peak
+all.liver.combined <- RegionStats(all.liver.combined[["ATAC"]], genome = EnsDb.Rnorvegicus.v79)
+
+#link peaks to genes
+all.liver.combined <-LinkPeaks(
+  object = all.liver.combined,
+  peak.assay = "ATAC",
+  expression.assay = "SCT",
+  genes.use = c("Col3a1")
+)
+
+p1 <-CoveragePlot(
+  object = all.liver.combined,
+  region = "Col3a1",
+  features = "Col3a1",
+  expression.assay = "SCT",
+  extend.upstream = 500,
+  extend.downstream = 10000,
+ group.by = "orig.ident"
+)
+
+DefaultAssay(lsec) <- "ATAC"
+
+  CoveragePlot(
+  object = hsc,
+  region = "Mapt",
+  features = "Mapt",
+  expression.assay = "SCT",
+  extend.upstream = 500,
+  extend.downstream = 10000,
+  group.by = "seurat_clusters")
