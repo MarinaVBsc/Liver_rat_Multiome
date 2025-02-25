@@ -8,19 +8,12 @@
 
 library(hdf5r)
 
-#In case Seurat didnt work. Open RStudio, go to "Packages", click on "install", watch for 'sn', then download it. Also downloaded 'httpuv' package
 library(httpuv)
-#install.packages("Matrix")
-#remove.packages("Matrix")
+install.packages("Matrix")
 if (!requireNamespace("BiocManager", quietly = TRUE)) 
  install.packages("BiocManager")
 BiocManager::install("biovizBase")
 library(BiocGenerics)
-#install.packages("Seurat", dependencies = TRUE)
-#install.packages("ape", dependencies=TRUE)
-#install.packages("arrow", dependencies=TRUE, type="source")
-#install.packages("reticulate", dependencies = TRUE)
-#install.packages("Matrix", dependencies = TRUE)
 library(Seurat)
 library(patchwork)
 library(htmltools)
@@ -47,7 +40,7 @@ args<- commandArgs(trailingOnly = TRUE)
 
 # Check paths
 # Automated paths:	
-#HOME=path_home()	los datos estan esta vez en work, no en home
+#HOME=path_home()	
 
 # Load RNA the dataset (from Seurat)
 CT_1 <-Read10X_h5("/Users/marina/Documents/Projectes/Multiome_rat/GeneExpression/Rat_liver_multiome_CT_1/filtered_feature_bc_matrix.h5")
