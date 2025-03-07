@@ -1,4 +1,0 @@
-organism: "rat"
-genome: ["mRatBN7-2"]
-input_fasta: ["/work/marina.v/Multiome/Reference_rat/Rattus_norvegicus.mRatBN7.2.dna.toplevel.fa"]
-input_gtf: ["/work/marina.v/Multiome/Reference_rat/Rattus_norvegicus.mRatBN7.2.105.filtered.gtf"]
