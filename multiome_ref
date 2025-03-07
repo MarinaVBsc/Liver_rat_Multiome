@@ -1,0 +1,40 @@
+FastQ files:
+
+Replicate 1: ATAC data: /analysisdata/rawseq/fastq/SHARED/000118/AGING_scMultiome/HN00164268/HN00164268_10X_RawData_Outs
+              RNA data: /analysisdata/rawseq/fastq/SHARED/000118/AGING_scMultiome/HN00164269/HN00164269_10X_RawData_Outs
+
+Replicate 2 : /analysisdata/rawseq/fastq/SHARED/000121/Rat_liver_multiome_2
+
+STEPS:
+1- CREATE NEW RAT GENOME REFERENCE FOR MULTIOME 
+
+cd /work/marina.v/Multiome
+export PATH=/work/marina.v/Multiome/opt/cellranger-arc-2.0.1:$PATH
+cellranger-arc mkref --config=/work/marina.v/Multiome/cellranger_arc_mkref
+
+"cellranger_arc_mkref":
+
+organism: "rat"
+genome: ["mRatBN7-2"]
+input_fasta: ["/work/marina.v/Multiome/Reference_rat/Rattus_norvegicus.mRatBN7.2.dna.toplevel.fa"]
+input_gtf: ["/work/marina.v/Multiome/Reference_rat/Rattus_norvegicus.mRatBN7.2.105.filtered.gtf"]
+
+2- CREATE A CSV with the required data
+
+Example for samples 10x_224_3p & 10x_225_At
+fastqs,sample,library_type
+/analysisdata/rawseq/fastq/SHARED/000118/AGING_scMultiome/HN00164269/HN00164269_10X_RawData_Outs/10x_224_3p/HHKHYCCX2,10x_224_3p,Gene Expression
+/analysisdata/rawseq/fastq/SHARED/000118/AGING_scMultiome/HN00164268/HN00164268_10X_RawData_Outs/10x_225_At/HHL7HCCX2,10x_225_At,Chromatin Accessibility
+
+3- RUN cellranger-arc:
+
+Example: 
+cd /work/marina.v/Multiome/
+export PATH=/work/marina.v/Multiome/opt/cellranger-arc-2.0.1:$PATH
+
+cellranger-arc count --id=Rat_liver_multiome_CT_1\
+			--reference=/work/marina.v/Multiome/mRatBN7-2 \
+			--libraries=/work/marina.v/Multiome/CSV/224-225_multiome.csv \
+			--localcores=16	
+			
+4- OBTAIN CELLRANGER HTML REPORTS
