@@ -7,6 +7,13 @@ In this case we are running:
 
 	Control (CT), Cirrhotic (CH) and Regression (R)
 
+- Seurat
 
+- ATAC
 
+- CellChat (R package)
+
+- 10x Genomics Visium
+
+  
 
